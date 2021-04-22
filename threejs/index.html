@@ -4,28 +4,147 @@
 
 <head>
   <meta charset="UTF-8" />
-  <title>TensorFlow.js OBD Demo</title>
-
-  <!-- Load TensorFlow.js-->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.0.0/dist/tf.min.js"></script>
-  <!-- Load the coco-ssd model. -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.0.2/dist/coco-ssd.js"></script>
-  
-
+  <title>A Thress.js Demo</title>
 </head>
 
 <body>
 
-  <h1>Demo of Three.js</h1>
+  <h1>A Thress.js Demo</h1>
   <video id="video" style=" position:fixed; top:150px; left:10px;" autoplay muted playsInline width="640" height="360"></video>
   <canvas id="canvasOutput" style=" position:fixed; top:600px; left:10px;" width="640" height="360"></canvas>
-  <canvas id="canvas0" style=" position:fixed; top:150px; left:10px;" width="640" height="360"></canvas>
-  <canvas id="canvas1" style=" position:fixed; top:600px; left:10px;" width="640" height="360"></canvas>
+  <!--canvas id="canvas0" style=" position:fixed; top:150px; left:10px;" width="640" height="360"></canvas>
+  <canvas id="canvas1" style=" position:fixed; top:600px; left:10px;" width="640" height="360"></canvas-->
   <div id="container"></div>
 
-  <script type="module">
+  <script src="./three/three.js"></script>
+  <script src="./three/js/postprocessing/EffectComposer.js"></script>
+  <script src="./three/js/postprocessing/RenderPass.js"></script>
+  <script src="./three/js/postprocessing/MaskPass.js"></script>
+  <script src="./three/js/postprocessing/ShaderPass.js"></script>
+  <script src="./three/js/shaders/CopyShader.js"></script>
 
-    import * as THREE from './src/three/three.module.js';
+  <script>
+    // Create scene
+    var scene = new THREE.Scene();
+
+    // Create renderer
+    var renderer = new THREE.WebGLRenderer();
+    renderer.setSize( window.innerWidth, window.innerHeight );
+		document.body.appendChild( renderer.domElement );
+
+    // Create camera
+    camera = new THREE.PerspectiveCamera( 100, window.innerWidth / window.innerHeight, 1, 1000000 );
+    camera.position.z = 800;
+
+    // Create effect composer
+    composer = new THREE.EffectComposer(renderer);
+    composer.addPass(new THREE.RenderPass(scene, camera));
+
+    // Add distortion effect to effect composer
+    var effect = new THREE.ShaderPass(getDistortionShaderDefinition());
+    composer.addPass(effect);
+    effect.renderToScreen = true;
+
+    // Setup distortion effect
+    var horizontalFOV = 140;
+    var strength = 0.5;
+    var cylindricalRatio = 2;
+    var height = Math.tan(THREE.Math.degToRad(horizontalFOV) / 2) / camera.aspect;
+
+    camera.fov = Math.atan(height) * 2 * 180 / 3.1415926535;
+    camera.updateProjectionMatrix();
+
+    effect.uniforms[ "strength" ].value = strength;
+    effect.uniforms[ "height" ].value = height;
+    effect.uniforms[ "aspectRatio" ].value = camera.aspect;
+    effect.uniforms[ "cylindricalRatio" ].value = cylindricalRatio;
+
+    function getDistortionShaderDefinition()
+    {
+      return {
+        uniforms: {
+            "tDiffuse":         { type: "t", value: null },
+            "strength":         { type: "f", value: -1 },
+            "height":           { type: "f", value: 1 },
+            "aspectRatio":      { type: "f", value: 1 },
+            "cylindricalRatio": { type: "f", value: 1 }
+        },
+
+        vertexShader: [
+            "uniform float strength;",          // s: 0 = perspective, 1 = stereographic
+            "uniform float height;",            // h: tan(verticalFOVInRadians / 2)
+            "uniform float aspectRatio;",       // a: screenWidth / screenHeight
+            "uniform float cylindricalRatio;",  // c: cylindrical distortion ratio. 1 = spherical
+
+            "varying vec3 vUV;",                // output to interpolate over screen
+            "varying vec2 vUVDot;",             // output to interpolate over screen
+
+            "void main() {",
+                "gl_Position = projectionMatrix * (modelViewMatrix * vec4(position, 1.0));",
+
+                "float scaledHeight = strength * height;",
+                "float cylAspectRatio = aspectRatio * cylindricalRatio;",
+                "float aspectDiagSq = aspectRatio * aspectRatio + 1.0;",
+                "float diagSq = scaledHeight * scaledHeight * aspectDiagSq;",
+                "vec2 signedUV = (2.0 * uv + vec2(-1.0, -1.0));",
+
+                "float z = 0.5 * sqrt(diagSq + 1.0) + 0.5;",
+                "float ny = (z - 1.0) / (cylAspectRatio * cylAspectRatio + 1.0);",
+
+                "vUVDot = sqrt(ny) * vec2(cylAspectRatio, 1.0) * signedUV;",
+                "vUV = vec3(0.5, 0.5, 1.0) * z + vec3(-0.5, -0.5, 0.0);",
+                "vUV.xy += uv;",
+            "}"
+        ].join("\n"),
+
+        fragmentShader: [
+            "uniform sampler2D tDiffuse;",      // sampler of rendered scene?s render target
+            "varying vec3 vUV;",                // interpolated vertex output data
+            "varying vec2 vUVDot;",             // interpolated vertex output data
+
+            "void main() {",
+                "vec3 uv = dot(vUVDot, vUVDot) * vec3(-0.5, -0.5, -1.0) + vUV;",
+                "gl_FragColor = texture2DProj(tDiffuse, uv);",
+            "}"
+        ].join("\n")
+
+      };
+    }
+    
+    var geometry = new THREE.PlaneGeometry(1280, 720);
+    var videoIn = document.getElementById('video');
+    var texture = new THREE.VideoTexture(videoIn);
+    var material = new THREE.MeshBasicMaterial({map: texture});
+    var mesh = new THREE.Mesh(geometry, material);
+
+    var cubeCamera = new THREE.CubeCamera( 1, 3000, 1024);
+    cubeCamera.renderTarget.minFilter = THREE.LinearMipMapLinearFilter;
+    scene.add(cubeCamera);
+    camParent.add(cubeCamera);
+ 
+    var material = new THREE.MeshBasicMaterial( { envMap: cubeCamera.renderTarget } );
+    material.side = THREE.DoubleSide;
+    sphere = new THREE.Mesh( new THREE.SphereGeometry( 2, 60, 30 ), material );
+    scene.add(sphere);
+
+    scene.add(mesh);
+
+		camera.position.z = 200;
+
+		var render = function () {
+			requestAnimationFrame( render );
+
+			//cube.rotation.x += 0.01;
+			//cube.rotation.y += 0.01;
+
+			renderer.render(scene, camera);
+		};
+
+		render();
+  </script>
+
+  <!--script type="module">
+    import * as THREE from './three/three.module.js';
 
     var camera, scene, renderer;
 
@@ -153,14 +272,14 @@
 
     }
 
-  </script>
+  </script-->
 
   <script type="text/javascript">
     let video = document.getElementById("video");
     let canvasFrame = document.getElementById("canvasOutput"); // canvasFrame is the id of <canvas>
     let context = canvasFrame.getContext("2d");
 
-    const FPS = 8;
+    const FPS = 20;
     function startVideo(){
       if (navigator.mediaDevices.getUserMedia || navigator.mediaDevices.webkitGetUserMedia){
         // define a Promise that'll be used to load the webcam and read its frames
@@ -324,7 +443,7 @@
         //alert('OpenCV.js is ready.');
         // do all your work here
         // schedule first one.
-        //setTimeout(processVideo, 0);
+        setTimeout(processVideo, 0);
       };
     }
     startVideo();
@@ -332,7 +451,4 @@
 
   <!-- Load opencv.js. -->  
   <script src="https://docs.opencv.org/4.5.1/opencv.js" onload="onOpenCvReady();" type="text/javascript"></script>
-
-  <!-- We will put our React component inside this div. -->
-  <div id="root"></div>  
 </body>

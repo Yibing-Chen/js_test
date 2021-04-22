@@ -1,0 +1,129 @@
+
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8" />
+  <title>A fisheyegl Demo</title>
+</head>
+
+<body>
+
+  <h1>A fisheyegl Demo</h1>
+  <video id="video" style=" position:fixed; top:150px; left:10px;" autoplay muted playsInline width="800" height="600"></video>
+  <canvas id="canvasOutput" style=" position:fixed; top:750px; left:10px; visibility:hidden;" width="800" height="600"></canvas>
+  <canvas id="canvas0" style=" position:fixed; top:150px; left:910px;" width="800" height="600"></canvas>
+  <!--canvas id="canvas1" style=" position:fixed; top:600px; left:10px;" width="640" height="360"></canvas-->
+  <div id="container"></div>
+
+  <script src="./fisheyegl.js"></script>
+
+  <script type="text/javascript">
+    let video = document.getElementById("video");
+    let canvasFrame = document.getElementById("canvasOutput"); // canvasFrame is the id of <canvas>
+    let context = canvasFrame.getContext("2d");
+
+    const FPS = 8;
+
+    var distorter = FisheyeGl({
+        //image: '#canvasOutput',
+        selector: '#canvas0', // a canvas element to work with
+        lens: {
+          a: 0.6,     // 0 to 4;  default 1
+          b: 0.8,     // 0 to 4;  default 1
+          Fx: 0.2,    // 0 to 4;  default 0.0
+          Fy: 0.4,    // 0 to 4;  default 0.0
+          scale: 1.1  // 0 to 20; default 1.5
+        },
+      //  fov: {
+      //    x: 1, // 0 to 2; default 1
+      //    y: 1  // 0 to 2; default 1
+      //  },
+      });
+
+    function startVideo(){
+      if (navigator.mediaDevices.getUserMedia || navigator.mediaDevices.webkitGetUserMedia){
+        // define a Promise that'll be used to load the webcam and read its frames
+        const webcamPromise = navigator.mediaDevices
+          .getUserMedia({
+            video: {
+              width: { ideal: 800 },
+              height: { ideal: 600 },
+              frameRate: { ideal: 30 },
+            },
+            //video: true,
+            audio: false,
+          })
+          .then(stream => {
+            // pass the current frame to the window.stream
+            window.stream = stream;
+            // pass the stream to the videoRef
+            video.srcObject = stream;
+
+            return new Promise(resolve => {
+              video.onloadedmetadata = () => {
+                resolve();
+              };
+            });
+          }, (error) => {
+            console.log("Couldn't start the webcam")
+            console.error(error)
+          });
+      }
+    }
+    function processVideo() {
+      /*let fisheyeK = cv.matFromArray(3, 3, cv.CV_32FC1, 
+                                     [1.59064e+03,   0.00000e+00,   1.91950e+03,
+                                      0.00000e+00,   1.58753e+03,   1.07950e+03,
+                                      0.00000e+00,   0.00000e+00,   1.00000e+00]);
+      let fisheyeD = cv.matFromArray(4, 1, cv.CV_32FC1, 
+                                     [-1.09917e-01, 4.63744e-02, -3.09370e-02, 7.79134e-03]);
+      let r = cv.matFromArray(4, 3, cv.CV_32FC1,
+                              [1, 0, 0, 0, 1, 0, 0, 0, 1]);
+      let nK = new cv.Mat(3 , 3, cv.CV_32FC1);*/
+      //let cap = new cv.VideoCapture("video");
+      //let src = new cv.Mat(video.height, video.width, cv.CV_8UC4);
+      //let dst = new cv.Mat(video.height, video.width, cv.CV_8UC1);
+      //let rst = new cv.Mat(video.height, video.width, cv.CV_8UC1);
+      let begin = Date.now();
+
+      //cap.read(src);
+      //cv.cvtColor(src, dst, cv.COLOR_RGBA2GRAY);
+
+      //cv.imshow(canvasFrame, src);
+      //src.delete();
+      //dst.delete();
+      //rst.delete();
+
+      // scale the canvas accordingly
+      //canvasFrame.width = video.videoWidth;
+      //canvasFrame.height = video.videoHeight;
+      // draw the video at that frame
+      context.drawImage(video, 0, 0, 800, 600);
+      // convert it to a usable data URL
+      const dataURL = canvasFrame.toDataURL();
+
+      //distorter.getImage(); // <= returns a native JavaScript Image object based on the DOM element
+      //distorter.getImage('image/png'); // <= format can be specified
+      distorter.setImage(dataURL); // <= load a new image with the same distortion settings
+
+      // schedule next one.
+      let delay = 1000/FPS - (Date.now() - begin);
+      setTimeout(processVideo, delay);
+    }
+    function onOpenCvReady() {
+      cv['onRuntimeInitialized']=()=>{
+        console.log("OPENCVJS LOADED!");
+        console.log(cv);
+        //alert('OpenCV.js is ready.');
+        // do all your work here
+        // schedule first one.
+        setTimeout(processVideo, 0);
+      };
+    }
+    startVideo();
+  </script>
+
+  <!-- Load opencv.js. -->  
+  <script src="https://docs.opencv.org/4.5.1/opencv.js" onload="onOpenCvReady();" type="text/javascript"></script>
+</body>
