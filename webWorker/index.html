@@ -1,0 +1,257 @@
+
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8" />
+  <title>A fisheyegl Demo</title>
+</head>
+
+<body>
+
+  <h1>A TFJS coco-ssd Demo</h1>
+  <video id="video" style=" position:fixed; top:100px; left:10px;" autoplay muted playsInline width="800" height="600"></video>
+  <canvas id="canvas-detect" style=" position:fixed; top:100px; left:10px;" width="800" height="600"></canvas>
+  <canvas id="canvas0" style=" position:fixed; top:100px; left:10px; visibility:hidden;" width="800" height="600"></canvas>
+  <!--canvas id="canvas1" style=" position:fixed; top:600px; left:10px;" width="640" height="360"></canvas-->
+  <div id="container"></div>
+
+  <!-- Load TensorFlow.js-->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.0.0/dist/tf.min.js"></script>
+  <!-- Load the coco-ssd model. -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.0.2/dist/coco-ssd.js"></script>
+
+  <!--script src="detet_worker.js"></script-->
+  <script type="text/javascript">
+    let video = document.getElementById("video");
+    let canvasFrame = document.getElementById("canvas0"); // canvasFrame is the id of <canvas>
+    let context = canvasFrame.getContext("2d");
+
+    var detectEnable = true;
+    var detectState = false;
+    var detectId;
+
+    function startVideo(){
+      if (navigator.mediaDevices.getUserMedia || navigator.mediaDevices.webkitGetUserMedia){
+        // define a Promise that'll be used to load the webcam and read its frames
+        const webcamPromise = navigator.mediaDevices
+          .getUserMedia({
+            video: {
+              width: { ideal: 800 },
+              height: { ideal: 600 },
+              frameRate: { ideal: 30 },
+            },
+            //video: true,
+            audio: false,
+          })
+          .then(stream => {
+            // pass the current frame to the window.stream
+            window.stream = stream;
+            // pass the stream to the videoRef
+            video.srcObject = stream;
+
+            return new Promise(resolve => {
+              video.onloadedmetadata = () => {
+                resolve();
+              };
+            });
+          }, (error) => {
+            console.log("Couldn't start the webcam")
+            console.error(error)
+          });
+      }
+    }
+
+    const videoPromise = document.getElementById('video');
+    let modelPromise;
+    (async function () {
+        // Load the model.
+        // 'mobilenet_v1', 'mobilenet_v2', 'lite_mobilenet_v2'
+        // Defaults to 'lite_mobilenet_v2' 
+        // lite_mobilenet_v2 is fastest in inference speed.
+        // mobilenet_v2 has the highest accuracy.
+        tf.setBackend('webgl');
+        modelPromise = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+        //document.getElementById('loading').close();
+        console.log('MODEL LOADED');
+        detectStart();
+    })();
+
+    // Initialize display
+    if (detectEnable) {
+        //detect_on_lte.innerHTML = "";
+        //detection_mark.innerHTML = "";
+    }
+    else {
+        //detect_on_lte.innerHTML = "人検出機能無効";
+        //detection_mark.innerHTML = "";
+    }
+
+    detectOn = () => {
+        detectEnable = true;
+        //detect_on_lte.innerHTML = "";
+        //detection_mark.innerHTML = "";
+        // Start detecting
+        //Promise.all([modelPromise, videoPromise])
+        //    .then(values => {
+        //        detectFrame(values[1], values[0]);
+        //    })
+        //    .catch(error => {
+        //        console.error(error);
+        //    });
+        detectId = window.setInterval(detectStart, 2000);
+    }
+
+    detectOff = () => {
+        detectEnable = false;
+        detectState = false;
+        //detect_on_lte.innerHTML = "人検出機能無効";
+        //detection_mark.innerHTML = "";
+        clearInterval(detectId);
+        // Clear detect result
+        const ctx = document.getElementById("canvas-detect").getContext("2d");
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    }
+
+    detectUnlock = () => {
+        detectState = false;
+        //lock_message.innerHTML = "";
+    }
+
+    detectStart = () => {
+        Promise.all([modelPromise, videoPromise])
+            .then(values => {
+                detectFrame(values[1], values[0]);
+            })
+            .catch(error => {
+                console.error(error);
+            });
+    }
+
+    detectFrame = (video, model) => {
+        // IMPORTANT: define video size before detection (equal to window size)
+        let rvideo = document.querySelector("#video");
+        rvideo.width = window.innerWidth;
+        rvideo.height = window.innerHeight;
+        if (detectEnable) {
+            // Usage: detect(Video element, max detections, threshold)
+            model.detect(video, 15, 0.55).then(predictions => {
+                // Debug output
+                // console.log('Predictions: ', predictions);
+                // Draw predictions
+                renderPredictions(predictions);
+                requestAnimationFrame(() => {
+                    detectFrame(video, model);
+                });
+            });
+        }
+    };
+
+    renderPredictions = predictions => {
+        // Define canvas size (equal to window size)
+        var canvas = document.querySelector("#canvas-detect");
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        const vHeightOffset = 0;
+        // Video width:height ratio
+        const widthHeightRatio = 4 / 3;
+        // Video size(detection)
+        var vWidth = canvas.width;
+        var vHeight = canvas.height - vHeightOffset;
+        // Video size(real)
+        var vWidthReal;
+        var vHeightReal;
+        // Calculate real video size with width:height ratio
+        if (vWidth / vHeight < widthHeightRatio) {
+            vWidthReal = vWidth;
+            vHeightReal = vWidth / widthHeightRatio;
+        }
+        else {
+            vWidthReal = vHeight * widthHeightRatio;
+            vHeightReal = vHeight;
+        }
+        //console.log('Canvas_size: ', canvas.width, canvas.height);
+        const ctx = document.getElementById("canvas-detect").getContext("2d");
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        // Font options
+        const font = "18px sans-serif";
+        ctx.font = font;
+        ctx.textBaseline = "top";
+        var personDetected = false;
+        predictions.forEach(prediction => {
+            const _class = prediction.class;
+            // Draw person class only
+            //if (_class == "person") {
+                // Coordination conversion use real video size and window size
+                const x = prediction.bbox[0] * vWidthReal / vWidth + (vWidth - vWidthReal) / 2;
+                const y = prediction.bbox[1] * vHeightReal / vHeight + (vHeight - vHeightReal) / 2 + vHeightOffset;
+                const width = prediction.bbox[2] * vWidthReal / vWidth;
+                const height = prediction.bbox[3] * vHeightReal / vHeight;
+                // Draw the bounding box.
+                ctx.strokeStyle = "#00FFFF";
+                ctx.lineWidth = 4;
+                ctx.strokeRect(x, y, width, height);
+                // Draw the label background.
+                ctx.fillStyle = "#00FFFF";
+                const textWidth = ctx.measureText(prediction.class).width;
+                const textHeight = parseInt(font, 10); // base 10
+                ctx.fillRect(x, y, textWidth + 4, textHeight + 4);
+                // Draw the text last to ensure it's on top.
+                ctx.fillStyle = "#000000";
+                ctx.fillText(prediction.class, x, y);
+                ctx.fillText(prediction.score.toFixed(2), x, y + height - textHeight);
+                personDetected = true;
+            //}
+        });
+        if (personDetected == true) {
+            //detection_mark.innerHTML = "●";
+            detectState = true;
+            //if (isUVOn()) {
+            //    uvOff();
+            //}
+        }
+        //人を検出していないとき
+        else {
+            detectState = true;
+            //表示を消す
+            //detection_mark.innerHTML = "";
+        }
+    };
+
+    //let webWorker = new Worker('detet_worker.js');
+    //webWorker.onmessage = evt => {
+    //    console.log(evt.data);
+    //    renderPredictions(evt.data);
+    //};
+
+    //setupModel = async function() {
+    //    if (window.Worker) {
+    //        let webWorker = new Worker('detet_worker.js');
+    //        webWorker.onmessage = evt => {
+    //        console.log(evt.data);
+    //        };
+    //    }
+    //    else {
+    //        console.log('Worker not supported!');
+    //    }
+    //}
+
+    offloadPredict = async function() {
+        //context.drawImage(video, 0, 0, 800, 600);
+        const imageData = context.getImageData(0, 0, 800, 600);
+        webWorker.postMessage(imageData);
+        //isWaiting = !isWaiting;
+    }
+
+    function update(){
+        context.drawImage(video, 0, 0, 800, 600);   
+        //requestAnimationFrame(update); // wait for the browser to be ready to present another animation fram.       
+    }
+
+    //setupModel();
+    startVideo();
+    //update();
+    //setInterval(update, 30);
+    //setInterval(offloadPredict, 100);
+  </script>
+</body>
